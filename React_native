@@ -1,0 +1,582 @@
+// App.js - Restaurant Order Management System (React Native)
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  StyleSheet,
+  SafeAreaView,
+  Alert,
+  StatusBar,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const App = () => {
+  const [view, setView] = useState('waiter');
+  const [orders, setOrders] = useState([]);
+  const [currentOrder, setCurrentOrder] = useState({
+    tableNumber: '',
+    items: [],
+    timestamp: null,
+    id: null,
+  });
+
+  // Menu items
+  const menuItems = {
+    bar: [
+      { id: 'b1', name: 'Beer', price: 5.0, category: 'bar' },
+      { id: 'b2', name: 'Wine', price: 7.0, category: 'bar' },
+      { id: 'b3', name: 'Cocktail', price: 10.0, category: 'bar' },
+      { id: 'b4', name: 'Soft Drink', price: 3.0, category: 'bar' },
+      { id: 'b5', name: 'Coffee', price: 3.5, category: 'bar' },
+      { id: 'b6', name: 'Tea', price: 2.5, category: 'bar' },
+    ],
+    kitchen: [
+      { id: 'k1', name: 'Caesar Salad', price: 12.0, category: 'kitchen' },
+      { id: 'k2', name: 'Grilled Chicken', price: 18.0, category: 'kitchen' },
+      { id: 'k3', name: 'Pasta Carbonara', price: 15.0, category: 'kitchen' },
+      { id: 'k4', name: 'Steak', price: 28.0, category: 'kitchen' },
+      { id: 'k5', name: 'Fish & Chips', price: 16.0, category: 'kitchen' },
+      { id: 'k6', name: 'Burger', price: 14.0, category: 'kitchen' },
+      { id: 'k7', name: 'Pizza Margherita', price: 13.0, category: 'kitchen' },
+      { id: 'k8', name: 'Soup of the Day', price: 8.0, category: 'kitchen' },
+    ],
+  };
+
+  useEffect(() => {
+    loadOrders();
+    const interval = setInterval(loadOrders, 3000); // Refresh every 3 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadOrders = async () => {
+    try {
+      const ordersJson = await AsyncStorage.getItem('restaurant-orders');
+      if (ordersJson) {
+        setOrders(JSON.parse(ordersJson));
+      }
+    } catch (error) {
+      console.log('Error loading orders:', error);
+    }
+  };
+
+  const saveOrders = async (updatedOrders) => {
+    try {
+      await AsyncStorage.setItem('restaurant-orders', JSON.stringify(updatedOrders));
+      setOrders(updatedOrders);
+    } catch (error) {
+      console.error('Error saving orders:', error);
+    }
+  };
+
+  const addItemToOrder = (item) => {
+    const existingItemIndex = currentOrder.items.findIndex((i) => i.id === item.id);
+
+    if (existingItemIndex >= 0) {
+      const updatedItems = [...currentOrder.items];
+      updatedItems[existingItemIndex].quantity += 1;
+      setCurrentOrder({ ...currentOrder, items: updatedItems });
+    } else {
+      setCurrentOrder({
+        ...currentOrder,
+        items: [...currentOrder.items, { ...item, quantity: 1 }],
+      });
+    }
+  };
+
+  const updateQuantity = (itemId, change) => {
+    const updatedItems = currentOrder.items
+      .map((item) => {
+        if (item.id === itemId) {
+          const newQuantity = item.quantity + change;
+          return { ...item, quantity: Math.max(0, newQuantity) };
+        }
+        return item;
+      })
+      .filter((item) => item.quantity > 0);
+
+    setCurrentOrder({ ...currentOrder, items: updatedItems });
+  };
+
+  const removeItem = (itemId) => {
+    setCurrentOrder({
+      ...currentOrder,
+      items: currentOrder.items.filter((item) => item.id !== itemId),
+    });
+  };
+
+  const submitOrder = async () => {
+    if (!currentOrder.tableNumber || currentOrder.items.length === 0) {
+      Alert.alert('Error', 'Please add table number and at least one item');
+      return;
+    }
+
+    const newOrder = {
+      ...currentOrder,
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      status: {
+        kitchen: 'pending',
+        bar: 'pending',
+      },
+    };
+
+    const updatedOrders = [...orders, newOrder];
+    await saveOrders(updatedOrders);
+
+    setCurrentOrder({ tableNumber: '', items: [], timestamp: null, id: null });
+    Alert.alert('Success', 'Order submitted successfully!');
+  };
+
+  const updateOrderStatus = async (orderId, station, status) => {
+    const updatedOrders = orders.map((order) => {
+      if (order.id === orderId) {
+        return {
+          ...order,
+          status: { ...order.status, [station]: status },
+        };
+      }
+      return order;
+    });
+
+    await saveOrders(updatedOrders);
+  };
+
+  const calculateTotal = (items) => {
+    return items.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2);
+  };
+
+  const getStationOrders = (station) => {
+    return orders
+      .filter((order) => order.items.some((item) => item.category === station))
+      .map((order) => ({
+        ...order,
+        items: order.items.filter((item) => item.category === station),
+      }));
+  };
+
+  // Navigation Bar
+  const NavigationBar = () => (
+    <View style={styles.navBar}>
+      <TouchableOpacity
+        style={[styles.navButton, view === 'waiter' && styles.navButtonActive]}
+        onPress={() => setView('waiter')}
+      >
+        <Text style={[styles.navText, view === 'waiter' && styles.navTextActive]}>
+          👤 Waiter
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.navButton, view === 'kitchen' && styles.navButtonActive]}
+        onPress={() => setView('kitchen')}
+      >
+        <Text style={[styles.navText, view === 'kitchen' && styles.navTextActive]}>
+          👨‍🍳 Kitchen
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.navButton, view === 'bar' && styles.navButtonActive]}
+        onPress={() => setView('bar')}
+      >
+        <Text style={[styles.navText, view === 'bar' && styles.navTextActive]}>
+          ☕ Bar
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Waiter View
+  const WaiterView = () => (
+    <ScrollView style={styles.container}>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Table Number</Text>
+        <TextInput
+          style={styles.input}
+          value={currentOrder.tableNumber}
+          onChangeText={(text) => setCurrentOrder({ ...currentOrder, tableNumber: text })}
+          placeholder="Enter table number"
+          keyboardType="numeric"
+        />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>☕ Bar Items</Text>
+        {menuItems.bar.map((item) => (
+          <TouchableOpacity
+            key={item.id}
+            style={styles.menuItem}
+            onPress={() => addItemToOrder(item)}
+          >
+            <Text style={styles.menuItemName}>{item.name}</Text>
+            <Text style={styles.menuItemPrice}>${item.price.toFixed(2)}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>👨‍🍳 Kitchen Items</Text>
+        {menuItems.kitchen.map((item) => (
+          <TouchableOpacity
+            key={item.id}
+            style={styles.menuItem}
+            onPress={() => addItemToOrder(item)}
+          >
+            <Text style={styles.menuItemName}>{item.name}</Text>
+            <Text style={styles.menuItemPrice}>${item.price.toFixed(2)}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {currentOrder.items.length > 0 && (
+        <View style={styles.currentOrder}>
+          <Text style={styles.sectionTitle}>Current Order</Text>
+          {currentOrder.items.map((item) => (
+            <View key={item.id} style={styles.orderItem}>
+              <Text style={styles.orderItemName}>{item.name}</Text>
+              <View style={styles.quantityControls}>
+                <TouchableOpacity
+                  style={styles.quantityButton}
+                  onPress={() => updateQuantity(item.id, -1)}
+                >
+                  <Text style={styles.quantityButtonText}>-</Text>
+                </TouchableOpacity>
+                <Text style={styles.quantityText}>{item.quantity}</Text>
+                <TouchableOpacity
+                  style={styles.quantityButton}
+                  onPress={() => updateQuantity(item.id, 1)}
+                >
+                  <Text style={styles.quantityButtonText}>+</Text>
+                </TouchableOpacity>
+                <Text style={styles.orderItemPrice}>
+                  ${(item.price * item.quantity).toFixed(2)}
+                </Text>
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => removeItem(item.id)}
+                >
+                  <Text style={styles.deleteButtonText}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+
+          <View style={styles.totalRow}>
+            <Text style={styles.totalText}>Total: ${calculateTotal(currentOrder.items)}</Text>
+            <TouchableOpacity style={styles.submitButton} onPress={submitOrder}>
+              <Text style={styles.submitButtonText}>Submit Order</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+    </ScrollView>
+  );
+
+  // Station View (Kitchen/Bar)
+  const StationView = ({ station }) => {
+    const stationOrders = getStationOrders(station);
+    const stationName = station.charAt(0).toUpperCase() + station.slice(1);
+    const stationIcon = station === 'kitchen' ? '👨‍🍳' : '☕';
+
+    return (
+      <ScrollView style={styles.container}>
+        <Text style={styles.pageTitle}>
+          {stationIcon} {stationName} Station
+        </Text>
+
+        {stationOrders.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>No pending {station} orders</Text>
+          </View>
+        ) : (
+          stationOrders.map((order) => (
+            <View key={order.id} style={styles.orderCard}>
+              <View style={styles.orderHeader}>
+                <View>
+                  <Text style={styles.tableNumber}>Table {order.tableNumber}</Text>
+                  <Text style={styles.orderTime}>
+                    {new Date(order.timestamp).toLocaleTimeString()}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.orderItems}>
+                {order.items.map((item) => (
+                  <View key={item.id} style={styles.orderItemRow}>
+                    <Text style={styles.orderItemText}>{item.name}</Text>
+                    <Text style={styles.orderItemQuantity}>x{item.quantity}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.statusButtons}>
+                {order.status[station] === 'pending' && (
+                  <TouchableOpacity
+                    style={[styles.statusButton, styles.startButton]}
+                    onPress={() => updateOrderStatus(order.id, station, 'preparing')}
+                  >
+                    <Text style={styles.statusButtonText}>⏱️ Start</Text>
+                  </TouchableOpacity>
+                )}
+                {order.status[station] === 'preparing' && (
+                  <TouchableOpacity
+                    style={[styles.statusButton, styles.completeButton]}
+                    onPress={() => updateOrderStatus(order.id, station, 'completed')}
+                  >
+                    <Text style={styles.statusButtonText}>✓ Complete</Text>
+                  </TouchableOpacity>
+                )}
+                {order.status[station] === 'completed' && (
+                  <View style={[styles.statusButton, styles.completedButton]}>
+                    <Text style={styles.completedButtonText}>Completed ✓</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" />
+      <NavigationBar />
+      {view === 'waiter' && <WaiterView />}
+      {view === 'kitchen' && <StationView station="kitchen" />}
+      {view === 'bar' && <StationView station="bar" />}
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  navBar: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    paddingVertical: 10,
+    paddingHorizontal: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  navButton: {
+    flex: 1,
+    paddingVertical: 12,
+    marginHorizontal: 5,
+    backgroundColor: '#e0e0e0',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  navButtonActive: {
+    backgroundColor: '#2196F3',
+  },
+  navText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  navTextActive: {
+    color: '#fff',
+  },
+  container: {
+    flex: 1,
+    padding: 15,
+  },
+  pageTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 15,
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  input: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    padding: 15,
+    marginBottom: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  menuItemName: {
+    fontSize: 16,
+  },
+  menuItemPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  currentOrder: {
+    backgroundColor: '#f9f9f9',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  orderItem: {
+    backgroundColor: '#fff',
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 8,
+  },
+  orderItemName: {
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  quantityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  quantityButton: {
+    backgroundColor: '#e0e0e0',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quantityButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  quantityText: {
+    marginHorizontal: 15,
+    fontSize: 16,
+    fontWeight: 'bold',
+    minWidth: 30,
+    textAlign: 'center',
+  },
+  orderItemPrice: {
+    flex: 1,
+    textAlign: 'right',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  deleteButton: {
+    marginLeft: 10,
+    padding: 5,
+  },
+  deleteButtonText: {
+    fontSize: 18,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 15,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  totalText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  submitButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  orderCard: {
+    backgroundColor: '#fff',
+    padding: 15,
+    marginBottom: 15,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  orderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  tableNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  orderTime: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  orderItems: {
+    marginBottom: 12,
+  },
+  orderItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  orderItemText: {
+    fontSize: 16,
+  },
+  orderItemQuantity: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  statusButtons: {
+    marginTop: 10,
+  },
+  statusButton: {
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  startButton: {
+    backgroundColor: '#FFC107',
+  },
+  completeButton: {
+    backgroundColor: '#4CAF50',
+  },
+  completedButton: {
+    backgroundColor: '#e0e0e0',
+  },
+  statusButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  completedButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#999',
+  },
+});
+
+export default App;
